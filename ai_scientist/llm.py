@@ -9,6 +9,9 @@ import backoff
 import openai
 
 MAX_NUM_TOKENS = 4096
+COPILOT_MODEL_PREFIX = "copilot-"
+COPILOT_BASE_URL = "https://api.githubcopilot.com/"
+COPILOT_INTEGRATION_ID = "vscode-chat"
 
 AVAILABLE_LLMS = [
     "claude-3-5-sonnet-20240620",
@@ -70,6 +73,12 @@ AVAILABLE_LLMS = [
     "ollama/deepseek-r1:32b",
     "ollama/deepseek-r1:70b",
     "ollama/deepseek-r1:671b",
+]
+
+AVAILABLE_LLMS += [
+    f"{COPILOT_MODEL_PREFIX}{model}"
+    for model in AVAILABLE_LLMS
+    if "gpt" in model or "o1" in model or "o3" in model
 ]
 
 
@@ -495,6 +504,22 @@ def create_client(model) -> tuple[Any, str]:
             api_key=os.environ.get("OLLAMA_API_KEY", ""),
             base_url="http://localhost:11434/v1",
         ), model
+    elif model.startswith(COPILOT_MODEL_PREFIX):
+        client_model = model.removeprefix(COPILOT_MODEL_PREFIX)
+        print(f"Using GitHub Copilot API with model {client_model}.")
+        if "GITHUB_COPILOT_API_KEY" not in os.environ:
+            raise ValueError("GITHUB_COPILOT_API_KEY environment variable not set")
+        return (
+            openai.OpenAI(
+                api_key=os.environ["GITHUB_COPILOT_API_KEY"],
+                base_url=COPILOT_BASE_URL,
+                default_headers={
+                    "Accept": "application/json",
+                    "Copilot-Integration-Id": COPILOT_INTEGRATION_ID,
+                },
+            ),
+            client_model,
+        )
     elif "gpt" in model:
         print(f"Using OpenAI API with model {model}.")
         return openai.OpenAI(), model
