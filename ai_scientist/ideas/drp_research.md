@@ -1,10 +1,41 @@
+# Title
+SOTA Drug-Blind IC50 Regression on GDSC with Substructure-Aware Modeling
+
 # Keywords
-drug response prediction, cancer cell lines, IC50, molecular representation learning, molecular substructure, scaffolds, fragments, motifs, subgraph fingerprints, SMILES, graph neural networks, transcriptomics, scFoundation, MOSA, multi-omics, multimodal learning, few-shot learning, meta-learning, transfer learning, relation modeling, interpretability
+drug response prediction, cancer cell lines, IC50, GDSC, drug-blind split, SMILES, molecular substructure, scaffolds, fragments, motifs, subgraph fingerprints, graph neural networks, transcriptomics, scFoundation, MOSA, multimodal learning, transfer learning, relation modeling, interpretability
+
 # TL;DR
-Explore novel machine learning approaches for predicting drug sensitivity in human cancer cell lines by combining rich molecular structure representations with cell-state representations. The topic should stay grounded in molecular substructure, scFoundation-based cellular context, and MOSA-enabled cancer cell line data, while remaining open to diverse modeling choices, training strategies, and research directions.
+Primary objective: achieve state-of-the-art performance on the GDSC drug-blind split for log(IC50) regression, where test drugs are unseen during training and drug representation is derived from SMILES. Use the CSG2A paper's drug-blind setting and metrics as the benchmark target.
+
+## Task Specification (Hard Constraints)
+1. Primary benchmark: GDSC drug-blind split (same evaluation protocol as CSG2A Table 1).
+2. Prediction target: log(IC50) regression.
+3. Input requirement: include drug SMILES-based modeling as the core drug modality.
+4. Core metrics:
+   - RMSE (lower is better)
+   - PCC (higher is better)
+5. Reporting requirement: report mean +- std over 10-fold CV under the drug-blind split.
+6. All model comparisons must be made under the same split/protocol.
+
+## Baseline Targets (CSG2A paper, drug-blind Table 1)
+Format: RMSE +- std / PCC +- std
+
+| Method | Drug-blind score |
+|---|---|
+| CSG2A | 2.119 +- 0.397 / 0.611 +- 0.140 |
+| SVM | 2.268 +- 0.437 / 0.520 +- 0.177 |
+| DeepTTA | 2.322 +- 0.496 / 0.502 +- 0.198 |
+| GraphDRP | 2.354 +- 0.394 / 0.466 +- 0.163 |
+| DRPreter | 2.473 +- 0.360 / 0.443 +- 0.175 |
+| RF | 2.671 +- 0.579 / 0.406 +- 0.256 |
+| DeepCoVDR | 2.754 +- 0.245 / 0.387 +- 0.200 |
+| Precily | 2.825 +- 0.400 / 0.362 +- 0.109 |
+| PathDNN | 3.257 +- 0.666 / 0.336 +- 0.271 |
+
+## Success Criteria
+1. Minimum target: beat strong non-CSG2A baselines (e.g., GraphDRP and DeepTTA) under the same protocol.
+2. SOTA target: meet or exceed CSG2A (RMSE <= 2.119 and PCC >= 0.611), with fold-wise robustness.
+3. Include at least one statistically grounded comparison against CSG2A-level performance (e.g., fold-wise paired test or confidence interval overlap discussion).
+
 ## Abstract
-We are interested in research ideas at the intersection of molecular machine learning, cellular representation learning, and cancer drug response prediction. A useful starting point is an existing framework that combines a simple drug encoder with a transcriptomics-based cell encoder, where the cell side is informed by scFoundation-style embeddings and the training ecosystem can benefit from MOSA-style data augmentation over large cancer cell line resources. However, the next generation of ideas should not be limited to this baseline, and should feel free to rethink the molecular encoder, multimodal interaction module, objective, and learning paradigm.
-The central research theme is to improve prediction of drug sensitivity in human cancer cell lines (for example IC50 or closely related response measures) by jointly modeling compound structure and cellular context. In particular, molecular substructure should play an important role. This may include scaffolds, fragments, motifs, local chemical environments, subgraphs, subgraph fingerprints, hierarchical graph structure, or other ways of explicitly representing chemically meaningful local patterns. Ideas may use SMILES, molecular graphs, learned molecular embeddings, or hybrid representations that combine hand-crafted and learned features.
-The cell-side signal should remain a first-class component of the problem. Research directions should make meaningful use of transcriptomic or multi-omic cell representations, especially scFoundation-like cell embeddings and/or datasets enriched, completed, or expanded through MOSA-like multi-omic augmentation. The goal is to leverage cell-state information not just as an auxiliary input, but as a strong contextual signal that can shape how molecular effects are modeled across diverse cancer cell lines.
-We are especially interested in ideas that can better capture interactions and generalization structure in this domain. This includes, but is not limited to, methods that model molecule–molecule relationships, relation-aware graph learning, multimodal fusion, transfer learning, few-shot adaptation, meta-learning, contrastive learning, retrieval-augmented prediction, uncertainty estimation, calibration, interpretability, and robustness under cross-dataset or low-data settings. Approaches that improve performance on unseen drugs, unseen cell lines, or sparse supervision are particularly interesting.
-The goal is not to force a single architecture, but to discover research directions that are novel, technically plausible, and potentially paper-worthy. Strong ideas may build on an existing drug-response framework, but should feel free to substantially depart from a fingerprint-only formulation and instead explore richer substructure-aware molecular modeling, stronger cross-modal interaction mechanisms, and more data-efficient learning strategies, as long as the ideas remain centered on molecular substructure, scFoundation-informed cellular context, and MOSA-enabled cancer cell line modeling.
+We focus on a constrained, benchmark-driven research task: improving drug response prediction on the GDSC drug-blind split for log(IC50) regression, with explicit emphasis on drug SMILES-based representation learning and substructure-aware modeling. The work should prioritize methods that improve generalization to unseen drugs while preserving reproducible protocol alignment with CSG2A-style evaluation. Candidate directions include substructure-conditioned molecular encoders, relation-aware multimodal fusion with cell-state context (e.g., scFoundation-like embeddings), and robust optimization strategies that improve both RMSE and PCC. All proposed experiments should be designed around direct comparability with published drug-blind baselines and should clearly demonstrate whether improvements are genuine under identical split and metric definitions.

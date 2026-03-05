@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import time
 
 from .utils import FunctionSpec, OutputType, opt_messages_to_list, backoff_create
@@ -9,6 +10,9 @@ from rich import print
 
 logger = logging.getLogger("ai-scientist")
 
+GLM_MODEL_PREFIX = "glm-"
+QWEN_MODEL_PREFIX = "qwen"
+GLM_BASE_URL = "https://coding-intl.dashscope.aliyuncs.com/v1/"
 
 OPENAI_TIMEOUT_EXCEPTIONS = (
     openai.RateLimitError,
@@ -17,11 +21,31 @@ OPENAI_TIMEOUT_EXCEPTIONS = (
     openai.InternalServerError,
 )
 
+
+def _get_glm_api_key() -> str:
+    api_key = (
+        os.environ.get("GLM_API_KEY")
+        or os.environ.get("ALIBABA_API_KEY")
+        or os.environ.get("DASHSCOPE_API_KEY")
+    )
+    if not api_key:
+        raise ValueError(
+            "GLM_API_KEY, ALIBABA_API_KEY, or DASHSCOPE_API_KEY environment variable not set"
+        )
+    return api_key
+
+
 def get_ai_client(model: str, max_retries=2) -> openai.OpenAI:
     if model.startswith("ollama/"):
         client = openai.OpenAI(
             base_url="http://localhost:11434/v1", 
             max_retries=max_retries
+        )
+    elif model.startswith(GLM_MODEL_PREFIX) or model.startswith(QWEN_MODEL_PREFIX):
+        client = openai.OpenAI(
+            api_key=_get_glm_api_key(),
+            base_url=GLM_BASE_URL,
+            max_retries=max_retries,
         )
     else:
         client = openai.OpenAI(max_retries=max_retries)

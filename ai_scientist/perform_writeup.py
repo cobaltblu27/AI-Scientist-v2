@@ -19,7 +19,7 @@ from ai_scientist.llm import (
 from ai_scientist.tools.semantic_scholar import search_for_papers
 
 from ai_scientist.perform_vlm_review import generate_vlm_img_review
-from ai_scientist.vlm import create_client as create_vlm_client
+from ai_scientist.vlm import AVAILABLE_VLMS, create_client as create_vlm_client
 
 
 def remove_accents_and_clean(s):
@@ -588,34 +588,42 @@ def perform_writeup(
                 continue
 
         # Generate VLM-based descriptions but do not overwrite plot_names
-        try:
-            vlm_client, vlm_model = create_vlm_client(small_model)
-            desc_map = {}
-            for pf in plot_names:
-                ppath = osp.join(figures_dir, pf)
-                if not osp.exists(ppath):
-                    continue
-                img_dict = {
-                    "images": [ppath],
-                    "caption": "No direct caption",
-                }
-                review_data = generate_vlm_img_review(img_dict, vlm_model, vlm_client)
-                if review_data:
-                    desc_map[pf] = review_data.get(
-                        "Img_description", "No description found"
+        if small_model in AVAILABLE_VLMS:
+            try:
+                vlm_client, vlm_model = create_vlm_client(small_model)
+                desc_map = {}
+                for pf in plot_names:
+                    ppath = osp.join(figures_dir, pf)
+                    if not osp.exists(ppath):
+                        continue
+                    img_dict = {
+                        "images": [ppath],
+                        "caption": "No direct caption",
+                    }
+                    review_data = generate_vlm_img_review(
+                        img_dict, vlm_model, vlm_client
                     )
-                else:
-                    desc_map[pf] = "No description found"
+                    if review_data:
+                        desc_map[pf] = review_data.get(
+                            "Img_description", "No description found"
+                        )
+                    else:
+                        desc_map[pf] = "No description found"
 
-            # Prepare a string listing all figure descriptions in order
-            plot_descriptions_list = []
-            for fname in plot_names:
-                desc_text = desc_map.get(fname, "No description found")
-                plot_descriptions_list.append(f"{fname}: {desc_text}")
-            plot_descriptions_str = "\n".join(plot_descriptions_list)
-        except Exception:
-            print("EXCEPTION in VLM figure description generation:")
-            print(traceback.format_exc())
+                # Prepare a string listing all figure descriptions in order
+                plot_descriptions_list = []
+                for fname in plot_names:
+                    desc_text = desc_map.get(fname, "No description found")
+                    plot_descriptions_list.append(f"{fname}: {desc_text}")
+                plot_descriptions_str = "\n".join(plot_descriptions_list)
+            except Exception:
+                print("EXCEPTION in VLM figure description generation:")
+                print(traceback.format_exc())
+                plot_descriptions_str = "No descriptions available."
+        else:
+            print(
+                f"Skipping VLM figure descriptions because {small_model} is not a supported VLM."
+            )
             plot_descriptions_str = "No descriptions available."
 
         # Construct final prompt for big model, placing the figure descriptions alongside the plot list
