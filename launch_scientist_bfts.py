@@ -6,6 +6,7 @@ import torch
 import os
 import re
 import sys
+import yaml
 from datetime import datetime
 from ai_scientist.llm import create_client
 
@@ -25,6 +26,7 @@ from ai_scientist.perform_icbinb_writeup import (
 )
 from ai_scientist.perform_llm_review import perform_review, load_paper
 from ai_scientist.perform_vlm_review import perform_imgs_cap_ref_review
+from ai_scientist.vlm import AVAILABLE_VLMS
 from ai_scientist.utils.token_tracker import token_tracker
 
 
@@ -37,6 +39,25 @@ def save_token_tracker(idea_dir):
         json.dump(token_tracker.get_summary(), f)
     with open(osp.join(idea_dir, "token_tracker_interactions.json"), "w") as f:
         json.dump(token_tracker.get_interactions(), f)
+
+
+def override_bfts_model_config(
+    config_path: str,
+    model_code: str,
+    model_feedback: str,
+    model_vlm_feedback: str,
+    model_report: str,
+) -> None:
+    with open(config_path, "r") as f:
+        cfg = yaml.safe_load(f)
+
+    cfg["agent"]["code"]["model"] = model_code
+    cfg["agent"]["feedback"]["model"] = model_feedback
+    cfg["agent"]["vlm_feedback"]["model"] = model_vlm_feedback
+    cfg["report"]["model"] = model_report
+
+    with open(config_path, "w") as f:
+        yaml.safe_dump(cfg, f, sort_keys=False)
 
 
 def parse_arguments():
@@ -85,19 +106,19 @@ def parse_arguments():
     parser.add_argument(
         "--model_agg_plots",
         type=str,
-        default="o3-mini-2025-01-31",
+        default="glm-5",
         help="Model to use for plot aggregation",
     )
     parser.add_argument(
         "--model_writeup",
         type=str,
-        default="o1-preview-2024-09-12",
+        default="glm-5",
         help="Model to use for writeup",
     )
     parser.add_argument(
         "--model_citation",
         type=str,
-        default="gpt-4o-2024-11-20",
+        default="glm-5",
         help="Model to use for citation gathering",
     )
     parser.add_argument(
@@ -109,14 +130,50 @@ def parse_arguments():
     parser.add_argument(
         "--model_writeup_small",
         type=str,
-        default="gpt-4o-2024-05-13",
+        default="glm-5",
         help="Smaller model to use for writeup",
+    )
+    parser.add_argument(
+        "--model_code",
+        type=str,
+        default="glm-5",
+        help="Model to use for tree-search code generation (overrides bfts_config.yaml)",
+    )
+    parser.add_argument(
+        "--model_feedback",
+        type=str,
+        default="glm-5",
+        help="Model to use for tree-search text feedback/evaluation (overrides bfts_config.yaml)",
+    )
+    parser.add_argument(
+        "--model_vlm_feedback",
+        type=str,
+        default="qwen3.5-plus",
+        help="Model to use for tree-search VLM feedback (overrides bfts_config.yaml)",
+    )
+    parser.add_argument(
+        "--model_report",
+        type=str,
+        default="glm-5",
+        help="Model to use for tree-search report summarization (overrides bfts_config.yaml)",
     )
     parser.add_argument(
         "--model_review",
         type=str,
-        default="gpt-4o-2024-11-20",
-        help="Model to use for review main text and captions",
+        default=None,
+        help="Deprecated: if set, overrides both --model_review_text and --model_review_vlm",
+    )
+    parser.add_argument(
+        "--model_review_text",
+        type=str,
+        default="glm-5",
+        help="Model to use for review main text",
+    )
+    parser.add_argument(
+        "--model_review_vlm",
+        type=str,
+        default="qwen3.5-plus",
+        help="Model to use for image/caption/reference VLM review",
     )
     parser.add_argument(
         "--skip_writeup",
@@ -181,6 +238,14 @@ def redirect_stdout_stderr_to_file(log_file_path):
 
 if __name__ == "__main__":
     args = parse_arguments()
+    if args.model_review:
+        print(
+            "Deprecated flag --model_review was provided; overriding "
+            "--model_review_text and --model_review_vlm with the same value."
+        )
+        args.model_review_text = args.model_review
+        args.model_review_vlm = args.model_review
+
     os.environ["AI_SCIENTIST_ROOT"] = os.path.dirname(os.path.abspath(__file__))
     print(f"Set AI_SCIENTIST_ROOT to {os.environ['AI_SCIENTIST_ROOT']}")
 
@@ -252,6 +317,13 @@ if __name__ == "__main__":
         idea_dir,
         idea_path_json,
     )
+    override_bfts_model_config(
+        config_path=idea_config_path,
+        model_code=args.model_code,
+        model_feedback=args.model_feedback,
+        model_vlm_feedback=args.model_vlm_feedback,
+        model_report=args.model_report,
+    )
 
     perform_experiments_bfts(idea_config_path)
     experiment_results_dir = osp.join(idea_dir, "logs/0-run/experiment_results")
@@ -307,11 +379,22 @@ if __name__ == "__main__":
         if os.path.exists(pdf_path):
             print("Paper found at: ", pdf_path)
             paper_content = load_paper(pdf_path)
-            client, client_model = create_client(args.model_review)
-            review_text = perform_review(paper_content, client_model, client)
-            review_img_cap_ref = perform_imgs_cap_ref_review(
-                client, client_model, pdf_path
-            )
+            text_client, text_model = create_client(args.model_review_text)
+            review_text = perform_review(paper_content, text_model, text_client)
+
+            vlm_client, vlm_model = create_client(args.model_review_vlm)
+            if vlm_model in AVAILABLE_VLMS:
+                review_img_cap_ref = perform_imgs_cap_ref_review(
+                    vlm_client, vlm_model, pdf_path
+                )
+            else:
+                print(
+                    f"Skipping image/caption review because {vlm_model} is not a supported VLM."
+                )
+                review_img_cap_ref = {
+                    "skipped": True,
+                    "reason": f"{vlm_model} is not a supported VLM",
+                }
             with open(osp.join(idea_dir, "review_text.txt"), "w") as f:
                 f.write(json.dumps(review_text, indent=4))
             with open(osp.join(idea_dir, "review_img_cap_ref.json"), "w") as f:

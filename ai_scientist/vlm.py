@@ -8,7 +8,12 @@ import os
 from PIL import Image
 from ai_scientist.utils.token_tracker import track_token_usage
 
-MAX_NUM_TOKENS = 4096
+# DashScope Coding Plan supports up to 16384 output tokens for glm-5.
+# Keep a unified cap at the smaller provider limit so glm-5 and qwen3.5-plus
+# both work safely with the same setting.
+MAX_NUM_TOKENS = 16384
+GLM_BASE_URL = "https://coding-intl.dashscope.aliyuncs.com/v1/"
+DASHSCOPE_VLM_MODELS = ["qwen3.5-plus"]
 
 AVAILABLE_VLMS = [
     "gpt-4o-2024-05-13",
@@ -29,7 +34,23 @@ AVAILABLE_VLMS = [
     "ollama/qwen2.5vl:32b",
 
     "ollama/z-uo/qwen2.5vl_tools:32b",
+
+    # Alibaba DashScope models
+    "qwen3.5-plus",
 ]
+
+
+def _get_dashscope_api_key() -> str:
+    api_key = (
+        os.environ.get("GLM_API_KEY")
+        or os.environ.get("ALIBABA_API_KEY")
+        or os.environ.get("DASHSCOPE_API_KEY")
+    )
+    if not api_key:
+        raise ValueError(
+            "GLM_API_KEY, ALIBABA_API_KEY, or DASHSCOPE_API_KEY environment variable not set"
+        )
+    return api_key
 
 
 def encode_image_to_base64(image_path: str) -> str:
@@ -88,6 +109,17 @@ def make_llm_call(client, model, temperature, system_message, prompt):
             n=1,
             seed=0,
         )
+    elif model in DASHSCOPE_VLM_MODELS:
+        return client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_message},
+                *prompt,
+            ],
+            temperature=temperature,
+            max_tokens=MAX_NUM_TOKENS,
+            n=1,
+        )
     else:
         raise ValueError(f"Model {model} not supported.")
 
@@ -105,6 +137,16 @@ def make_vlm_call(client, model, temperature, system_message, prompt):
             max_tokens=MAX_NUM_TOKENS,
         )
     elif "gpt" in model:
+        return client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_message},
+                *prompt,
+            ],
+            temperature=temperature,
+            max_tokens=MAX_NUM_TOKENS,
+        )
+    elif model in DASHSCOPE_VLM_MODELS:
         return client.chat.completions.create(
             model=model,
             messages=[
@@ -209,6 +251,12 @@ def create_client(model: str) -> tuple[Any, str]:
             api_key=os.environ.get("OLLAMA_API_KEY", ""),
             base_url="http://localhost:11434/v1"
         ), model
+    elif model in DASHSCOPE_VLM_MODELS:
+        print(f"Using DashScope OpenAI-compatible API with model {model}.")
+        return openai.OpenAI(
+            api_key=_get_dashscope_api_key(),
+            base_url=GLM_BASE_URL,
+        ), model
     else:
         raise ValueError(f"Model {model} not supported.")
 
@@ -312,6 +360,17 @@ def get_batch_responses_from_vlm(
                 max_tokens=MAX_NUM_TOKENS,
                 n=n_responses,
                 seed=0,
+            )
+        elif model in DASHSCOPE_VLM_MODELS:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": system_message},
+                    *new_msg_history,
+                ],
+                temperature=temperature,
+                max_tokens=MAX_NUM_TOKENS,
+                n=n_responses,
             )
         else:
             # Get multiple responses
