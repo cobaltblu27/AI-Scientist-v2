@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 import time
 
 from .utils import FunctionSpec, OutputType, opt_messages_to_list, backoff_create
@@ -62,11 +63,17 @@ def query(
     filtered_kwargs: dict = select_values(notnone, model_kwargs)  # type: ignore
 
     messages = opt_messages_to_list(system_message, user_message)
+    model_name = str(filtered_kwargs.get("model", ""))
+    is_dashscope_model = model_name.startswith(
+        (GLM_MODEL_PREFIX, QWEN_MODEL_PREFIX)
+    )
 
     if func_spec is not None:
         filtered_kwargs["tools"] = [func_spec.as_openai_tool_dict]
-        # force the model to use the function
-        filtered_kwargs["tool_choice"] = func_spec.openai_tool_choice_dict
+        # DashScope thinking mode rejects forced function/tool selection.
+        # Keep tools, but do not force tool_choice for GLM/Qwen models.
+        if not is_dashscope_model:
+            filtered_kwargs["tool_choice"] = func_spec.openai_tool_choice_dict
 
     if filtered_kwargs.get("model", "").startswith("ollama/"):
        filtered_kwargs["model"] = filtered_kwargs["model"].replace("ollama/", "")
@@ -85,20 +92,33 @@ def query(
     if func_spec is None:
         output = choice.message.content
     else:
-        assert (
-            choice.message.tool_calls
-        ), f"function_call is empty, it is not a function call: {choice.message}"
-        assert (
-            choice.message.tool_calls[0].function.name == func_spec.name
-        ), "Function name mismatch"
-        try:
-            print(f"[cyan]Raw func call response: {choice}[/cyan]")
-            output = json.loads(choice.message.tool_calls[0].function.arguments)
-        except json.JSONDecodeError as e:
-            logger.error(
-                f"Error decoding the function arguments: {choice.message.tool_calls[0].function.arguments}"
-            )
-            raise e
+        if choice.message.tool_calls:
+            assert (
+                choice.message.tool_calls[0].function.name == func_spec.name
+            ), "Function name mismatch"
+            try:
+                print(f"[cyan]Raw func call response: {choice}[/cyan]")
+                output = json.loads(choice.message.tool_calls[0].function.arguments)
+            except json.JSONDecodeError as e:
+                logger.error(
+                    f"Error decoding the function arguments: {choice.message.tool_calls[0].function.arguments}"
+                )
+                raise e
+        else:
+            # Fallback for providers/models that return JSON in content
+            # even when tool schemas are provided.
+            raw_content = choice.message.content or ""
+            try:
+                output = json.loads(raw_content)
+            except json.JSONDecodeError:
+                match = re.search(r"```json\s*(\{.*?\})\s*```", raw_content, re.DOTALL)
+                if match is None:
+                    match = re.search(r"(\{.*\})", raw_content, re.DOTALL)
+                if match is None:
+                    raise AssertionError(
+                        "function_call is empty and no JSON object found in message content"
+                    )
+                output = json.loads(match.group(1))
 
     in_tokens = completion.usage.prompt_tokens
     out_tokens = completion.usage.completion_tokens

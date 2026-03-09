@@ -6,6 +6,7 @@ import torch
 import os
 import re
 import sys
+import atexit
 import yaml
 from datetime import datetime
 from ai_scientist.llm import create_client
@@ -76,9 +77,24 @@ def parse_arguments():
         help="Path to a JSON file containing pregenerated ideas",
     )
     parser.add_argument(
+        "--bfts_config",
+        type=str,
+        default="bfts_config.yaml",
+        help="Path to BFTS config YAML to use as a template for this run",
+    )
+    parser.add_argument(
         "--load_code",
         action="store_true",
         help="If set, load a Python file with same name as ideas file but .py extension",
+    )
+    parser.add_argument(
+        "--data_dir",
+        type=str,
+        default=None,
+        help=(
+            "Optional path to prepared dataset directory. "
+            "If set, use this data directory directly instead of creating an empty per-run data folder."
+        ),
     )
     parser.add_argument(
         "--idea_idx",
@@ -221,6 +237,66 @@ def find_pdf_path_for_review(idea_dir):
     return pdf_path
 
 
+class TeeStream:
+    """Write to terminal and a log file at the same time."""
+
+    def __init__(self, primary_stream, secondary_stream):
+        self.primary_stream = primary_stream
+        self.secondary_stream = secondary_stream
+
+    def write(self, data):
+        self.primary_stream.write(data)
+        self.secondary_stream.write(data)
+        return len(data)
+
+    def flush(self):
+        self.primary_stream.flush()
+        self.secondary_stream.flush()
+
+    def __getattr__(self, name):
+        return getattr(self.primary_stream, name)
+
+
+def start_debug_logging(log_file_path: str) -> str:
+    os.makedirs(osp.dirname(log_file_path), exist_ok=True)
+    log_file = open(log_file_path, "a", buffering=1, encoding="utf-8")
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    sys.stdout = TeeStream(original_stdout, log_file)
+    sys.stderr = TeeStream(original_stderr, log_file)
+
+    def _cleanup_log():
+        try:
+            sys.stdout.flush()
+            sys.stderr.flush()
+        finally:
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr
+            log_file.close()
+
+    atexit.register(_cleanup_log)
+    return osp.abspath(log_file_path)
+
+
+def link_debug_log_into_idea_logs(debug_log_abspath: str, idea_dir: str) -> None:
+    idea_logs_dir = osp.join(idea_dir, "logs")
+    os.makedirs(idea_logs_dir, exist_ok=True)
+    link_path = osp.join(idea_logs_dir, "launcher_debug.log")
+
+    try:
+        if osp.lexists(link_path):
+            os.remove(link_path)
+        os.symlink(debug_log_abspath, link_path)
+        print(f"Debug log linked at {link_path} -> {debug_log_abspath}")
+    except OSError:
+        # Fallback for filesystems where symlink is not available.
+        try:
+            shutil.copy2(debug_log_abspath, link_path)
+            print(f"Symlink unavailable; copied debug log snapshot to {link_path}")
+        except OSError as e:
+            print(f"Warning: could not place debug log in idea logs dir: {e}")
+
+
 @contextmanager
 def redirect_stdout_stderr_to_file(log_file_path):
     original_stdout = sys.stdout
@@ -237,6 +313,11 @@ def redirect_stdout_stderr_to_file(log_file_path):
 
 
 if __name__ == "__main__":
+    log_timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    debug_log_path = osp.join("logs", f"launch_scientist_bfts_{log_timestamp}.log")
+    debug_log_abspath = start_debug_logging(debug_log_path)
+    print(f"Debug logging enabled: {debug_log_abspath}")
+
     args = parse_arguments()
     if args.model_review:
         print(
@@ -248,6 +329,18 @@ if __name__ == "__main__":
 
     os.environ["AI_SCIENTIST_ROOT"] = os.path.dirname(os.path.abspath(__file__))
     print(f"Set AI_SCIENTIST_ROOT to {os.environ['AI_SCIENTIST_ROOT']}")
+    if not os.path.isfile(args.bfts_config):
+        raise FileNotFoundError(
+            f"--bfts_config path does not exist or is not a file: {args.bfts_config}"
+        )
+    print(f"Using BFTS config template: {os.path.abspath(args.bfts_config)}")
+
+    if args.data_dir is not None:
+        if not os.path.isdir(args.data_dir):
+            raise FileNotFoundError(
+                f"--data_dir path does not exist or is not a directory: {args.data_dir}"
+            )
+        print(f"Using prepared data directory: {os.path.abspath(args.data_dir)}")
 
     # Check available GPUs and adjust parallel processes if necessary
     available_gpus = get_available_gpus()
@@ -263,6 +356,7 @@ if __name__ == "__main__":
     idea_dir = f"experiments/{date}_{idea['Name']}_attempt_{args.attempt_id}"
     print(f"Results will be saved in {idea_dir}")
     os.makedirs(idea_dir, exist_ok=True)
+    link_debug_log_into_idea_logs(debug_log_abspath, idea_dir)
 
     # Convert idea json to markdown file
     idea_path_md = osp.join(idea_dir, "idea.md")
@@ -311,11 +405,12 @@ if __name__ == "__main__":
     with open(idea_path_json, "w") as f:
         json.dump(ideas[args.idea_idx], f, indent=4)
 
-    config_path = "bfts_config.yaml"
+    config_path = args.bfts_config
     idea_config_path = edit_bfts_config_file(
         config_path,
         idea_dir,
         idea_path_json,
+        data_dir=args.data_dir,
     )
     override_bfts_model_config(
         config_path=idea_config_path,

@@ -146,9 +146,15 @@ def get_summarizer_prompt(journal, stage_name):
     )
 
 
-def get_stage_summary(journal, stage_name, model, client):
+def get_stage_summary(journal, stage_name, model, client, temperature=0.7):
     sys_msg, prompt = get_summarizer_prompt(journal, stage_name)
-    response = get_response_from_llm(prompt, client, model, sys_msg)
+    response = get_response_from_llm(
+        prompt,
+        client,
+        model,
+        sys_msg,
+        temperature=temperature,
+    )
     summary_json = extract_json_between_markers(response[0])
     return summary_json
 
@@ -229,6 +235,19 @@ def update_summary(
     return summary_json
 
 
+def _get_final_summary_llm_settings(cfg):
+    if cfg is None:
+        return "glm-5", 0.7
+
+    if getattr(cfg, "report", None) is not None:
+        return cfg.report.model, cfg.report.temp
+
+    if cfg.agent.get("summary", None) is not None:
+        return cfg.agent.summary.model, cfg.agent.summary.temp
+
+    return cfg.agent.feedback.model, cfg.agent.feedback.temp
+
+
 overall_plan_summarizer_prompt = """You have been provided with the plans for both the parent node and the current node. Your task is to synthesize a comprehensive summary of the overall plan by integrating details from both the parent and current node plans.
 The summary should be thorough and clearly articulate the underlying motivations.
 For example, if in your previous overall plan you were experimenting with a new idea, and now your current plan is to fix certain bugs in the previous implementation, your returned overall plan should focus on your previous overall plan, and briefly mention that the current plan includes bug fixes. If your current plan is more about implementing new ideas, then you should summarize that thoroughly along with the previous overall plan.
@@ -260,16 +279,13 @@ Ensure the JSON is valid and properly formatted, as it will be automatically par
 
 
 def annotate_history(journal, cfg=None):
+    model, temperature = _get_final_summary_llm_settings(cfg)
     for node in journal.nodes:
         if node.parent:
             max_retries = 3
             retry_count = 0
             while retry_count < max_retries:
                 try:
-                    if cfg.agent.get("summary", None) is not None:
-                        model = cfg.agent.summary.model
-                    else:
-                        model = "gpt-4o-2024-08-06"
                     client = get_ai_client(model)
                     response = get_response_from_llm(
                         overall_plan_summarizer_prompt.format(
@@ -279,6 +295,7 @@ def annotate_history(journal, cfg=None):
                         client,
                         model,
                         report_summarizer_sys_msg,
+                        temperature=temperature,
                     )
                     node.overall_plan = extract_json_between_markers(response[0])[
                         "overall_plan"
@@ -296,67 +313,97 @@ def annotate_history(journal, cfg=None):
             node.overall_plan = node.plan
 
 
-def overall_summarize(journals, cfg=None):
-    from concurrent.futures import ThreadPoolExecutor
+def _get_main_stage_id(stage_name: str) -> int | None:
+    normalized = stage_name[6:] if stage_name.startswith("stage_") else stage_name
+    prefix = normalized.split("_", 1)[0]
+    try:
+        return int(prefix)
+    except ValueError:
+        return None
 
-    def process_stage(idx, stage_tuple):
-        stage_name, journal = stage_tuple
-        annotate_history(journal, cfg=cfg)
-        if idx in [1, 2]:
-            best_node = journal.get_best_node(cfg=cfg)
-            # get multi-seed results and aggregater node
-            child_nodes = best_node.children
-            multi_seed_nodes = [
-                n for n in child_nodes if n.is_seed_node and not n.is_seed_agg_node
-            ]
-            agg_node = None
-            for n in child_nodes:
-                if n.is_seed_node and n.is_seed_agg_node:
-                    agg_node = n
-                    break
-            if agg_node is None:
-                # skip agg node
-                return {
-                    "best node": get_node_log(best_node),
-                    "best node with different seeds": [
-                        get_node_log(n) for n in multi_seed_nodes
-                    ],
-                }
-            else:
-                return {
-                    "best node": get_node_log(best_node),
-                    "best node with different seeds": [
-                        get_node_log(n) for n in multi_seed_nodes
-                    ],
-                    "aggregated results of nodes with different seeds": get_node_log(
-                        agg_node
-                    ),
-                }
-        elif idx == 3:
-            good_leaf_nodes = [
-                n for n in journal.good_nodes if n.is_leaf and n.ablation_name
-            ]
-            return [get_node_log(n) for n in good_leaf_nodes]
-        elif idx == 0:
-            if cfg.agent.get("summary", None) is not None:
-                model = cfg.agent.summary.get("model", "")
-            else:
-                model = "gpt-4o-2024-08-06"
-            client = get_ai_client(model)
-            summary_json = get_stage_summary(journal, stage_name, model, client)
-            return summary_json
 
-    from tqdm import tqdm
+def _get_best_stage_result(stage_journals, cfg=None):
+    best_journal = None
+    best_node = None
+    for _stage_name, journal in stage_journals:
+        candidate = journal.get_best_node(cfg=cfg)
+        if candidate is None:
+            continue
+        if best_node is None or candidate.metric > best_node.metric:
+            best_journal = journal
+            best_node = candidate
 
-    with ThreadPoolExecutor() as executor:
-        results = list(
-            tqdm(
-                executor.map(process_stage, range(len(list(journals))), journals),
-                desc="Processing stages",
-                total=len(list(journals)),
-            )
+    if best_journal is None or best_node is None:
+        return {}
+
+    child_nodes = best_node.children
+    multi_seed_nodes = [
+        n for n in child_nodes if n.is_seed_node and not n.is_seed_agg_node
+    ]
+    agg_node = next(
+        (n for n in child_nodes if n.is_seed_node and n.is_seed_agg_node),
+        None,
+    )
+
+    result = {
+        "best node": get_node_log(best_node),
+        "best node with different seeds": [get_node_log(n) for n in multi_seed_nodes],
+    }
+    if agg_node is not None:
+        result["aggregated results of nodes with different seeds"] = get_node_log(
+            agg_node
         )
-        draft_summary, baseline_summary, research_summary, ablation_summary = results
+    return result
+
+
+def overall_summarize(journals, cfg=None):
+    journals = list(journals)
+    for _stage_name, journal in journals:
+        annotate_history(journal, cfg=cfg)
+
+    grouped_stages = {1: [], 2: [], 3: [], 4: []}
+    for stage_name, journal in journals:
+        main_stage_id = _get_main_stage_id(stage_name)
+        if main_stage_id in grouped_stages:
+            grouped_stages[main_stage_id].append((stage_name, journal))
+
+    model, temperature = _get_final_summary_llm_settings(cfg)
+    client = get_ai_client(model)
+
+    draft_summary = {}
+    if grouped_stages[1]:
+        first_stage_name, first_journal = grouped_stages[1][0]
+        draft_summary = get_stage_summary(
+            first_journal,
+            first_stage_name,
+            model,
+            client,
+            temperature=temperature,
+        )
+        for stage_name, journal in grouped_stages[1][1:]:
+            current_summary = get_stage_summary(
+                journal,
+                stage_name,
+                model,
+                client,
+                temperature=temperature,
+            )
+            draft_summary = update_summary(
+                draft_summary,
+                stage_name,
+                journal,
+                current_summary,
+                model,
+                client,
+            )
+
+    baseline_summary = _get_best_stage_result(grouped_stages[2], cfg=cfg)
+    research_summary = _get_best_stage_result(grouped_stages[3], cfg=cfg)
+
+    ablation_summary = []
+    for _stage_name, journal in grouped_stages[4]:
+        good_leaf_nodes = [n for n in journal.good_nodes if n.is_leaf and n.ablation_name]
+        ablation_summary.extend(get_node_log(n) for n in good_leaf_nodes)
 
     return draft_summary, baseline_summary, research_summary, ablation_summary
 
