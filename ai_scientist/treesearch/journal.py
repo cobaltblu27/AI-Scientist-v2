@@ -432,6 +432,10 @@ class Journal:
         if len(nodes) == 1:
             return nodes[0]
 
+        # If no explicit LLM selector is configured, prefer deterministic metric selection.
+        if cfg is None or cfg.agent.get("select_node", None) is None:
+            return max(nodes, key=lambda n: n.metric)
+
         # Create evaluation prompt for LLM
         prompt = {
             "Introduction": (
@@ -467,12 +471,8 @@ class Journal:
                 prompt["Candidates"] += candidate_info
 
         try:
-            if cfg is None or cfg.agent.get("select_node", None) is None:
-                model = "gpt-4o"
-                temperature = 0.3
-            else:
-                model = cfg.agent.select_node.model
-                temperature = cfg.agent.select_node.temp
+            model = cfg.agent.select_node.model
+            temperature = cfg.agent.select_node.temp
             selection = query(
                 system_message=prompt,
                 user_message=None,
@@ -604,8 +604,16 @@ class Journal:
         stage_summary = query(
             system_message=summary_prompt,
             user_message="Generate a comprehensive summary of the experimental findings in this stage",
-            model=cfg.agent.summary.model if cfg.agent.get("summary", None) else "gpt-4o",
-            temperature=cfg.agent.summary.temp if cfg.agent.get("summary", None) else 0.3
+            model=(
+                cfg.agent.summary.model
+                if cfg.agent.get("summary", None)
+                else cfg.agent.feedback.model
+            ),
+            temperature=(
+                cfg.agent.summary.temp
+                if cfg.agent.get("summary", None)
+                else cfg.agent.feedback.temp
+            ),
         )
 
         with open(os.path.join(notes_dir, f"{stage_name}_summary.txt"), "w") as f:
