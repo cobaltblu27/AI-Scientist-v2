@@ -27,7 +27,7 @@ from ai_scientist.perform_vlm_review import (
     perform_imgs_cap_ref_review_selection,
     detect_duplicate_figures,
 )
-from ai_scientist.vlm import create_client as create_vlm_client
+from ai_scientist.vlm import AVAILABLE_VLMS, create_client as create_vlm_client
 
 
 def remove_accents_and_clean(s):
@@ -45,44 +45,73 @@ def remove_accents_and_clean(s):
 def compile_latex(cwd, pdf_file, timeout=30):
     print("GENERATING LATEX")
 
-    commands = [
-        ["pdflatex", "-interaction=nonstopmode", "template.tex"],
-        ["bibtex", "template"],
-        ["pdflatex", "-interaction=nonstopmode", "template.tex"],
-        ["pdflatex", "-interaction=nonstopmode", "template.tex"],
-    ]
+    pdflatex = shutil.which("pdflatex")
+    bibtex = shutil.which("bibtex")
+    tectonic = shutil.which("tectonic")
 
-    for command in commands:
-        try:
-            result = subprocess.run(
-                command,
-                cwd=cwd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=timeout,
-            )
-            print("Standard Output:\n", result.stdout)
-            print("Standard Error:\n", result.stderr)
-        except subprocess.TimeoutExpired:
-            print(
-                f"EXCEPTION in compile_latex: LaTeX timed out after {timeout} seconds."
-            )
-            print(traceback.format_exc())
-        except subprocess.CalledProcessError:
-            print(
-                f"EXCEPTION in compile_latex: Error running command {' '.join(command)}"
-            )
-            print(traceback.format_exc())
+    command_sets = []
+    if pdflatex and bibtex:
+        command_sets.append(
+            [
+                [pdflatex, "-interaction=nonstopmode", "template.tex"],
+                [bibtex, "template"],
+                [pdflatex, "-interaction=nonstopmode", "template.tex"],
+                [pdflatex, "-interaction=nonstopmode", "template.tex"],
+            ]
+        )
+    if tectonic:
+        command_sets.append(
+            [[tectonic, "--keep-logs", "--keep-intermediates", "template.tex"]]
+        )
+    if not command_sets:
+        raise RuntimeError(
+            "No usable LaTeX compiler found. Install working pdflatex+bibtex or tectonic."
+        )
+
+    for commands in command_sets:
+        compile_failed = False
+        for command in commands:
+            try:
+                result = subprocess.run(
+                    command,
+                    cwd=cwd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    timeout=timeout,
+                )
+                print("Standard Output:\n", result.stdout)
+                print("Standard Error:\n", result.stderr)
+                if result.returncode != 0:
+                    print(
+                        f"EXCEPTION in compile_latex: Error running command {' '.join(command)}"
+                    )
+                    compile_failed = True
+                    break
+            except subprocess.TimeoutExpired:
+                print(
+                    f"EXCEPTION in compile_latex: LaTeX timed out after {timeout} seconds."
+                )
+                print(traceback.format_exc())
+                compile_failed = True
+                break
+
+        if compile_failed:
+            continue
+
+        if osp.exists(osp.join(cwd, "template.pdf")):
+            print("FINISHED GENERATING LATEX")
+            try:
+                shutil.move(osp.join(cwd, "template.pdf"), pdf_file)
+                return
+            except FileNotFoundError:
+                print("Failed to rename PDF.")
+                print("EXCEPTION in compile_latex while moving PDF:")
+                print(traceback.format_exc())
+                return
 
     print("FINISHED GENERATING LATEX")
-
-    try:
-        shutil.move(osp.join(cwd, "template.pdf"), pdf_file)
-    except FileNotFoundError:
-        print("Failed to rename PDF.")
-        print("EXCEPTION in compile_latex while moving PDF:")
-        print(traceback.format_exc())
+    print("Failed to generate template.pdf with all available LaTeX compilers.")
 
 
 def is_header_or_footer(line):
@@ -948,34 +977,47 @@ def perform_writeup(
             with open(writeup_file, "w") as f:
                 f.write(content)
 
-        # Generate VLM-based descriptions
-        try:
-            vlm_client, vlm_model = create_vlm_client(small_model)
-            desc_map = {}
-            for pf in plot_names:
-                ppath = osp.join(figures_dir, pf)
-                if not osp.exists(ppath):
-                    continue
-                img_dict = {
-                    "images": [ppath],
-                    "caption": "No direct caption",
-                }
-                review_data = generate_vlm_img_review(img_dict, vlm_model, vlm_client)
-                if review_data:
-                    desc_map[pf] = review_data.get(
-                        "Img_description", "No description found"
-                    )
-                else:
-                    desc_map[pf] = "No description found"
+        vlm_client = None
+        vlm_model = None
+        vlm_enabled = small_model in AVAILABLE_VLMS
 
-            plot_descriptions_list = []
-            for fname in plot_names:
-                desc_text = desc_map.get(fname, "No description found")
-                plot_descriptions_list.append(f"{fname}: {desc_text}")
-            plot_descriptions_str = "\n".join(plot_descriptions_list)
-        except Exception:
-            print("EXCEPTION in VLM figure description generation:")
-            print(traceback.format_exc())
+        # Generate VLM-based descriptions
+        if vlm_enabled:
+            try:
+                vlm_client, vlm_model = create_vlm_client(small_model)
+                desc_map = {}
+                for pf in plot_names:
+                    ppath = osp.join(figures_dir, pf)
+                    if not osp.exists(ppath):
+                        continue
+                    img_dict = {
+                        "images": [ppath],
+                        "caption": "No direct caption",
+                    }
+                    review_data = generate_vlm_img_review(
+                        img_dict, vlm_model, vlm_client
+                    )
+                    if review_data:
+                        desc_map[pf] = review_data.get(
+                            "Img_description", "No description found"
+                        )
+                    else:
+                        desc_map[pf] = "No description found"
+
+                plot_descriptions_list = []
+                for fname in plot_names:
+                    desc_text = desc_map.get(fname, "No description found")
+                    plot_descriptions_list.append(f"{fname}: {desc_text}")
+                plot_descriptions_str = "\n".join(plot_descriptions_list)
+            except Exception:
+                print("EXCEPTION in VLM figure description generation:")
+                print(traceback.format_exc())
+                plot_descriptions_str = "No descriptions available."
+                vlm_enabled = False
+        else:
+            print(
+                f"Skipping VLM figure descriptions because {small_model} is not a supported VLM."
+            )
             plot_descriptions_str = "No descriptions available."
 
         big_model_system_message = writeup_system_message_template.format(
@@ -1031,15 +1073,23 @@ def perform_writeup(
             print(f"[green]Compiling PDF for reflection {i+1}...[/green]")
             compile_latex(latex_folder, reflection_pdf)
 
-            review_img_cap_ref = perform_imgs_cap_ref_review(
-                vlm_client, vlm_model, reflection_pdf
-            )
+            if vlm_enabled:
+                review_img_cap_ref = perform_imgs_cap_ref_review(
+                    vlm_client, vlm_model, reflection_pdf
+                )
 
-            # Detect duplicate figures between main text and appendix
-            analysis_duplicate_figs = detect_duplicate_figures(
-                vlm_client, vlm_model, reflection_pdf
-            )
-            print(analysis_duplicate_figs)
+                # Detect duplicate figures between main text and appendix
+                analysis_duplicate_figs = detect_duplicate_figures(
+                    vlm_client, vlm_model, reflection_pdf
+                )
+                print(analysis_duplicate_figs)
+            else:
+                review_img_cap_ref = (
+                    f"Skipped because {small_model} is not a supported VLM."
+                )
+                analysis_duplicate_figs = (
+                    f"Skipped because {small_model} is not a supported VLM."
+                )
 
             # Get reflection_page_info
             reflection_page_info = get_reflection_page_info(reflection_pdf, page_limit)
@@ -1118,6 +1168,9 @@ Ensure proper citation usage:
             else:
                 print(f"No valid LaTeX code block found in reflection step {i+1}.")
                 break
+            if not vlm_enabled:
+                continue
+
             # Get new reflection_page_info
             reflection_page_info = get_reflection_page_info(reflection_pdf, page_limit)
             review_img_selection = perform_imgs_cap_ref_review_selection(

@@ -157,17 +157,15 @@ def track_token_usage(func):
         model = result.model
         timestamp = result.created
 
-        if hasattr(result, "usage") and result.usage.completion_tokens_details is not None:
+        if hasattr(result, "usage") and result.usage is not None:
+            completion_details = getattr(result.usage, "completion_tokens_details", None)
+            prompt_details = getattr(result.usage, "prompt_tokens_details", None)
             token_tracker.add_tokens(
                 model,
                 result.usage.prompt_tokens,
                 result.usage.completion_tokens,
-                result.usage.completion_tokens_details.reasoning_tokens,
-                (
-                    result.usage.prompt_tokens_details.cached_tokens
-                    if hasattr(result.usage, "prompt_tokens_details")
-                    else 0
-                ),
+                getattr(completion_details, "reasoning_tokens", 0) or 0,
+                getattr(prompt_details, "cached_tokens", 0) or 0,
             )
             # Add interaction details
             token_tracker.add_interaction(
@@ -195,17 +193,17 @@ def track_token_usage(func):
         logging.info("args: ", args)
         logging.info("kwargs: ", kwargs)
 
-        if hasattr(result, "usage") and result.usage.completion_tokens_details is not None:
+        print(str(result))
+
+        if hasattr(result, "usage") and result.usage is not None:
+            completion_details = getattr(result.usage, "completion_tokens_details", None)
+            prompt_details = getattr(result.usage, "prompt_tokens_details", None)
             token_tracker.add_tokens(
                 model,
                 result.usage.prompt_tokens,
                 result.usage.completion_tokens,
-                result.usage.completion_tokens_details.reasoning_tokens,
-                (
-                    result.usage.prompt_tokens_details.cached_tokens
-                    if hasattr(result.usage, "prompt_tokens_details")
-                    else 0
-                ),
+                getattr(completion_details, "reasoning_tokens", 0) or 0,
+                getattr(prompt_details, "cached_tokens", 0) or 0,
             )
             # Add interaction details
             token_tracker.add_interaction(

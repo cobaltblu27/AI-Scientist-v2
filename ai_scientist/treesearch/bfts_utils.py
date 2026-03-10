@@ -42,7 +42,9 @@ def idea_to_markdown(data: dict, output_path: str, load_code: str) -> None:
                 f.write(f"```python\n{code}\n```\n\n")
 
 
-def edit_bfts_config_file(config_path: str, idea_dir: str, idea_path: str) -> str:
+def edit_bfts_config_file(
+    config_path: str, idea_dir: str, idea_path: str, data_dir: str | None = None
+) -> str:
     """
     Edit the bfts_config.yaml file to point to the idea.md file
 
@@ -50,6 +52,7 @@ def edit_bfts_config_file(config_path: str, idea_dir: str, idea_path: str) -> st
         config_path: Path to the bfts_config.yaml file
         idea_dir: Directory where the idea.md file is located
         idea_path: Path to the idea.md file
+        data_dir: Optional path to prepared dataset directory to use directly
 
     Returns:
         Path to the edited bfts_config.yaml file
@@ -61,10 +64,13 @@ def edit_bfts_config_file(config_path: str, idea_dir: str, idea_path: str) -> st
     config["desc_file"] = idea_path
     config["workspace_dir"] = idea_dir
 
-    # make an empty data directory
-    data_dir = osp.join(idea_dir, "data")
-    os.makedirs(data_dir, exist_ok=True)
-    config["data_dir"] = data_dir
+    if data_dir:
+        config["data_dir"] = osp.abspath(data_dir)
+    else:
+        # make an empty data directory
+        auto_data_dir = osp.join(idea_dir, "data")
+        os.makedirs(auto_data_dir, exist_ok=True)
+        config["data_dir"] = auto_data_dir
 
     # make an empty log directory
     log_dir = osp.join(idea_dir, "logs")

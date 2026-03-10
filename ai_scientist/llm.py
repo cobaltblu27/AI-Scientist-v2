@@ -8,7 +8,16 @@ import anthropic
 import backoff
 import openai
 
-MAX_NUM_TOKENS = 4096
+# DashScope Coding Plan supports up to 16384 output tokens for glm-5.
+# Keep a unified cap at the smaller provider limit so glm-5 and qwen3.5-plus
+# both work safely with the same setting.
+MAX_NUM_TOKENS = 16384
+COPILOT_MODEL_PREFIX = "copilot-"
+COPILOT_BASE_URL = "https://api.githubcopilot.com/"
+COPILOT_INTEGRATION_ID = "vscode-chat"
+GLM_MODEL_PREFIX = "glm-"
+QWEN_MODEL_PREFIX = "qwen"
+GLM_BASE_URL = "https://coding-intl.dashscope.aliyuncs.com/v1/"
 
 AVAILABLE_LLMS = [
     "claude-3-5-sonnet-20240620",
@@ -51,6 +60,9 @@ AVAILABLE_LLMS = [
     "gemini-2.0-flash",
     "gemini-2.5-flash-preview-04-17",
     "gemini-2.5-pro-preview-03-25",
+    # GLM models via DashScope
+    "glm-5",
+    "qwen3.5-plus",
     # GPT-OSS models via Ollama
     "ollama/gpt-oss:20b",
     "ollama/gpt-oss:120b",
@@ -70,6 +82,12 @@ AVAILABLE_LLMS = [
     "ollama/deepseek-r1:32b",
     "ollama/deepseek-r1:70b",
     "ollama/deepseek-r1:671b",
+]
+
+AVAILABLE_LLMS += [
+    f"{COPILOT_MODEL_PREFIX}{model}"
+    for model in AVAILABLE_LLMS
+    if "gpt" in model or "o1" in model or "o3" in model
 ]
 
 
@@ -184,6 +202,23 @@ def get_batch_responses_from_llm(
         new_msg_history = [
             new_msg_history + [{"role": "assistant", "content": c}] for c in content
         ]
+    elif model.startswith(GLM_MODEL_PREFIX) or model.startswith(QWEN_MODEL_PREFIX):
+        new_msg_history = msg_history + [{"role": "user", "content": msg}]
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_message},
+                *new_msg_history,
+            ],
+            temperature=temperature,
+            max_tokens=MAX_NUM_TOKENS,
+            n=n_responses,
+            stop=None,
+        )
+        content = [r.message.content for r in response.choices]
+        new_msg_history = [
+            new_msg_history + [{"role": "assistant", "content": c}] for c in content
+        ]
     else:
         content, new_msg_history = [], []
         for _ in range(n_responses):
@@ -250,7 +285,18 @@ def make_llm_call(client, model, temperature, system_message, prompt):
             n=1,
             seed=0,
         )
-    
+    elif model.startswith(GLM_MODEL_PREFIX) or model.startswith(QWEN_MODEL_PREFIX):
+        return client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_message},
+                *prompt,
+            ],
+            temperature=temperature,
+            max_tokens=MAX_NUM_TOKENS,
+            n=1,
+            stop=None,
+        )
     else:
         raise ValueError(f"Model {model} not supported.")
 
@@ -434,6 +480,21 @@ def get_response_from_llm(
         )
         content = response.choices[0].message.content
         new_msg_history = new_msg_history + [{"role": "assistant", "content": content}]
+    elif model.startswith(GLM_MODEL_PREFIX) or model.startswith(QWEN_MODEL_PREFIX):
+        new_msg_history = msg_history + [{"role": "user", "content": msg}]
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_message},
+                *new_msg_history,
+            ],
+            temperature=temperature,
+            max_tokens=MAX_NUM_TOKENS,
+            n=1,
+            stop=None,
+        )
+        content = response.choices[0].message.content
+        new_msg_history = new_msg_history + [{"role": "assistant", "content": content}]
     else:
         raise ValueError(f"Model {model} not supported.")
 
@@ -489,6 +550,22 @@ def create_client(model) -> tuple[Any, str]:
         client_model = model.split("/")[-1]
         print(f"Using Vertex AI with model {client_model}.")
         return anthropic.AnthropicVertex(), client_model
+    elif model.startswith(COPILOT_MODEL_PREFIX):
+        client_model = model.removeprefix(COPILOT_MODEL_PREFIX)
+        print(f"Using GitHub Copilot API with model {client_model}.")
+        if "GITHUB_COPILOT_API_KEY" not in os.environ:
+            raise ValueError("GITHUB_COPILOT_API_KEY environment variable not set")
+        return (
+            openai.OpenAI(
+                api_key=os.environ["GITHUB_COPILOT_API_KEY"],
+                base_url=COPILOT_BASE_URL,
+                default_headers={
+                    "Accept": "application/json",
+                    "Copilot-Integration-Id": COPILOT_INTEGRATION_ID,
+                },
+            ),
+            client_model,
+        )
     elif model.startswith("ollama/"):
         print(f"Using Ollama with model {model}.")
         return openai.OpenAI(
@@ -537,6 +614,24 @@ def create_client(model) -> tuple[Any, str]:
             openai.OpenAI(
                 api_key=os.environ["GEMINI_API_KEY"],
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            ),
+            model,
+        )
+    elif model.startswith(GLM_MODEL_PREFIX) or model.startswith(QWEN_MODEL_PREFIX):
+        print(f"Using DashScope OpenAI-compatible API with {model}.")
+        api_key = (
+            os.environ.get("GLM_API_KEY")
+            or os.environ.get("ALIBABA_API_KEY")
+            or os.environ.get("DASHSCOPE_API_KEY")
+        )
+        if not api_key:
+            raise ValueError(
+                "GLM_API_KEY, ALIBABA_API_KEY, or DASHSCOPE_API_KEY environment variable not set"
+            )
+        return (
+            openai.OpenAI(
+                api_key=api_key,
+                base_url=GLM_BASE_URL,
             ),
             model,
         )

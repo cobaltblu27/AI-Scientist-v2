@@ -1793,7 +1793,7 @@ class ParallelAgent:
             import traceback
 
             traceback.print_exc()
-            raise
+            raise RuntimeError(f"Worker process error: {e}") from None
 
     def _generate_hyperparam_tuning_idea(self) -> Optional[HyperparamTuningIdea]:
         """Generate the next hyperparam tuning idea based on what's been done.
@@ -2078,7 +2078,11 @@ class ParallelAgent:
                 }
             )
         else:
-            memory_summary = self.journal.generate_summary(include_code=False)
+            memory_summary = self.journal.generate_summary(
+                include_code=False,
+                model=self.cfg.agent.feedback.model,
+                temp=self.cfg.agent.feedback.temp,
+            )
 
         print("Submitting tasks to process pool")
         futures = []

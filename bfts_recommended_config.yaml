@@ -1,3 +1,5 @@
+# Paper-faithful baseline with a longer per-node timeout for local runs.
+
 # path to the task data directory
 data_dir: "data"
 preprocess_data: False
@@ -16,7 +18,7 @@ exp_name: run # a random experiment name will be generated if not provided
 
 # settings for code execution
 exec:
-  timeout: 7200
+  timeout: 10800 # 3 hours
   agent_file_name: runfile.py
   format_tb_ipython: False
 
@@ -38,20 +40,20 @@ agent:
   type: parallel
   num_workers: 1
   stages:
-    stage1_max_iters: 28
-    stage2_max_iters: 20
-    stage3_max_iters: 24
-    stage4_max_iters: 20
+    stage1_max_iters: 21
+    stage2_max_iters: 12
+    stage3_max_iters: 12
+    stage4_max_iters: 12
   # how many improvement iterations to run
   steps: 5 # if stage-specific max_iters are not provided, the agent will use this value for all stages
   # whether to instruct the agent to use CV (set to 1 to disable)
   k_fold_validation: 1
   multi_seed_eval:
-    num_seeds: 3 # higher-quality final evaluation; increases runtime
+    num_seeds: 3 # paper-aligned multi-seed setting
   # whether to instruct the agent to generate a prediction function
   expose_prediction: False
   # whether to provide the agent with a preview of the data
-  data_preview: False
+  data_preview: True
 
   # LLM settings for coding
   code:
@@ -62,7 +64,6 @@ agent:
   # LLM settings for evaluating program output / tracebacks
   feedback:
     model: glm-5
-    # gpt-4o
     temp: 0.5
     max_tokens: 16384
 
@@ -72,7 +73,7 @@ agent:
     max_tokens: 16384
 
   search:
-    max_debug_depth: 5
+    max_debug_depth: 3
     debug_prob: 1.0
     num_drafts: 5
 

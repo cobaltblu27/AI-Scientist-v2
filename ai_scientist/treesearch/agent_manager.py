@@ -146,27 +146,74 @@ class AgentManager:
             3: "creative_research",
             4: "ablation_studies",
         }
-        self.main_stage_goals: Dict[int, str] = {
-            1: """
-                - Focus on getting basic working implementation
-                - Use a simple dataset
-                - Aim for basic functional correctness
-                - If you are given \"Code To Use\", you can directly use it as a starting point.""",
-            2: """
-                - Change hyperparameters such as learning rate, number of epochs, batch size, etc. to improve the performance
-                - DO NOT change the model architecture from the previous stage
-                - Introduce TWO more new datasets from HuggingFace test the model. Try very hard to think what Huggingface datasets can be used here for testing.""",
-            3: """
-                - Explore novel improvements
-                - Come up with experiments to reveal new insights
-                - Be creative and think outside the box
-                - MAKE SURE you use THREE HuggingFace dataset in total to test your models""",
-            4: """
-                - Conduct systematic component analysis that reveals the contribution of each part
-                - Use the same datasets you used from the previous stage""",
-        }
+        self.real_dataset_focus = self._uses_provided_real_world_dataset()
+        self.main_stage_goals: Dict[int, str] = self._build_main_stage_goals()
         # Create initial stage
         self._create_initial_stage()
+
+    def _uses_provided_real_world_dataset(self) -> bool:
+        task_text = json.dumps(self.task_desc, ensure_ascii=False).lower()
+        file_pattern = re.compile(
+            r"[\w./-]+\.(csv|tsv|parquet|jsonl|npy|npz|fa|fasta|fastq|vcf|bed|gz)\b"
+        )
+        keyword_hits = [
+            "reference genome",
+            "provided local dataset",
+            "local dataset",
+            "real-world dataset",
+            "real world dataset",
+            "cultivars",
+            "patients",
+            "cohort",
+        ]
+        return bool(file_pattern.search(task_text)) or any(
+            keyword in task_text for keyword in keyword_hits
+        )
+
+    def _build_main_stage_goals(self) -> Dict[int, str]:
+        if not self.real_dataset_focus:
+            return {
+                1: """
+                    - Focus on getting basic working implementation
+                    - Use a simple dataset
+                    - Aim for basic functional correctness
+                    - If you are given \"Code To Use\", you can directly use it as a starting point.""",
+                2: """
+                    - Change hyperparameters such as learning rate, number of epochs, batch size, etc. to improve the performance
+                    - DO NOT change the model architecture from the previous stage
+                    - Introduce TWO more new datasets from HuggingFace test the model. Try very hard to think what Huggingface datasets can be used here for testing.""",
+                3: """
+                    - Explore novel improvements
+                    - Come up with experiments to reveal new insights
+                    - Be creative and think outside the box
+                    - MAKE SURE you use THREE HuggingFace dataset in total to test your models""",
+                4: """
+                    - Conduct systematic component analysis that reveals the contribution of each part
+                    - Use the same datasets you used from the previous stage""",
+            }
+
+        return {
+            1: """
+                - Focus on getting a basic but working implementation on the provided real-world dataset
+                - Verify data loading paths, sample alignment, target columns, and evaluation protocol before adding complexity
+                - Aim for basic functional correctness on the actual task data, not a substitute dataset
+                - If you are given \"Code To Use\", you can directly use it as a starting point.""",
+            2: """
+                - Change hyperparameters such as learning rate, number of epochs, batch size, regularization strength, or feature filtering to improve performance
+                - DO NOT change the model architecture from the previous stage
+                - Keep the provided real-world dataset as the primary evaluation dataset
+                - DO NOT substitute unrelated HuggingFace/public datasets for the main result
+                - If you need robustness checks, use repeated seeds, cross-validation, biologically meaningful subsets, or feature ablations on the same dataset.""",
+            3: """
+                - Explore novel improvements
+                - Come up with experiments to reveal new insights on the provided real-world dataset
+                - Be creative and think outside the box while staying grounded in the real task
+                - Preserve the provided dataset as the primary benchmark and report real-world results first
+                - If extra data manipulations are needed, derive them from the same dataset (splits, resampling, augmentation, pathway-based subsets) rather than switching to unrelated public datasets.""",
+            4: """
+                - Conduct systematic component analysis that reveals the contribution of each part
+                - Use the same provided real-world dataset and the same primary evaluation protocol as the previous stage.""",
+        }
 
     def _get_max_iterations(self, stage_number: int) -> int:
         """Get max iterations for a stage from config or default"""
