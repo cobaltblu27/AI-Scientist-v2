@@ -196,5 +196,5 @@ final_papers/
 # HF
 cache/
 huggingface/
-
+credentials.json
 ai_scientist/ideas/*

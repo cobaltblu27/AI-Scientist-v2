@@ -15,3 +15,7 @@ micromamba run -n ai_scientist python ai_scientist/perform_ideation_temp_free.py
 * If requirements are ambiguous: stop and ask before coding.
 * Prefer minimal diffs; avoid refactors unless required by acceptance criteria.
 
+## Contribution
+this is forked repository, and development is mainly for my own use.
+when creating pr, point to main branch of remote `cobalt`.
+you may use gh.

@@ -550,6 +550,22 @@ def create_client(model) -> tuple[Any, str]:
         client_model = model.split("/")[-1]
         print(f"Using Vertex AI with model {client_model}.")
         return anthropic.AnthropicVertex(), client_model
+    elif model.startswith(COPILOT_MODEL_PREFIX):
+        client_model = model.removeprefix(COPILOT_MODEL_PREFIX)
+        print(f"Using GitHub Copilot API with model {client_model}.")
+        if "GITHUB_COPILOT_API_KEY" not in os.environ:
+            raise ValueError("GITHUB_COPILOT_API_KEY environment variable not set")
+        return (
+            openai.OpenAI(
+                api_key=os.environ["GITHUB_COPILOT_API_KEY"],
+                base_url=COPILOT_BASE_URL,
+                default_headers={
+                    "Accept": "application/json",
+                    "Copilot-Integration-Id": COPILOT_INTEGRATION_ID,
+                },
+            ),
+            client_model,
+        )
     elif model.startswith("ollama/"):
         print(f"Using Ollama with model {model}.")
         return openai.OpenAI(

@@ -25,6 +25,22 @@ def _throttle_s2_requests() -> None:
         _S2_LAST_REQUEST_TS = time.monotonic()
 
 
+S2_MIN_REQUEST_INTERVAL_SECONDS = 1.0
+_S2_RATE_LIMIT_LOCK = threading.Lock()
+_S2_LAST_REQUEST_TS = 0.0
+
+
+def _throttle_s2_requests() -> None:
+    """Enforce at most 1 Semantic Scholar request per second (per process)."""
+    global _S2_LAST_REQUEST_TS
+    with _S2_RATE_LIMIT_LOCK:
+        now = time.monotonic()
+        elapsed = now - _S2_LAST_REQUEST_TS
+        if elapsed < S2_MIN_REQUEST_INTERVAL_SECONDS:
+            time.sleep(S2_MIN_REQUEST_INTERVAL_SECONDS - elapsed)
+        _S2_LAST_REQUEST_TS = time.monotonic()
+
+
 def on_backoff(details: Dict) -> None:
     print(
         f"Backing off {details['wait']:0.1f} seconds after {details['tries']} tries "
