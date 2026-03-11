@@ -176,6 +176,7 @@ data/
 templates/*/run_0/
 templates/*/*.png
 results/
+RESULTS.md
 # logs/
 
 # data folders under review_iclr_bench/
@@ -197,4 +198,5 @@ final_papers/
 cache/
 huggingface/
 credentials.json
+
 ai_scientist/ideas/*

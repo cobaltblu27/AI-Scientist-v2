@@ -14,6 +14,7 @@ micromamba run -n ai_scientist python ai_scientist/perform_ideation_temp_free.py
 
 * If requirements are ambiguous: stop and ask before coding.
 * Prefer minimal diffs; avoid refactors unless required by acceptance criteria.
+* When asked to summarize experiment results, also update `RESULTS.md` with per-experiment and per-attempt outcomes, key metrics, and notable artifacts.
 
 ## Contribution
 this is forked repository, and development is mainly for my own use.
