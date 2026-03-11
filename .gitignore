@@ -1,3 +1,5 @@
+credentials.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -195,3 +197,4 @@ final_papers/
 cache/
 huggingface/
 credentials.json
+ai_scientist/ideas/*

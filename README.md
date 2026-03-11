@@ -70,6 +70,10 @@ By default, the system uses the `OPENAI_API_KEY` environment variable for OpenAI
 
 By default, the system uses the `GEMINI_API_KEY` environment variable for Gemini models through OpenAI API.
 
+#### GLM Models
+
+By default, the system uses `GLM_API_KEY` for GLM models through DashScope's OpenAI-compatible API. It also accepts `ALIBABA_API_KEY` or `DASHSCOPE_API_KEY`.
+
 #### Claude Models via AWS Bedrock
 
 To use Claude models provided by Amazon Bedrock, install the necessary additional packages:
@@ -87,6 +91,7 @@ Our code can optionally use a Semantic Scholar API Key (`S2_API_KEY`) for higher
 Ensure you provide the necessary API keys as environment variables for the models you intend to use. For example:
 ```bash
 export OPENAI_API_KEY="YOUR_OPENAI_KEY_HERE"
+export GLM_API_KEY="YOUR_GLM_KEY_HERE"
 export S2_API_KEY="YOUR_S2_KEY_HERE"
 # Set AWS credentials if using Bedrock
 # export AWS_ACCESS_KEY_ID="YOUR_AWS_ACCESS_KEY_ID"

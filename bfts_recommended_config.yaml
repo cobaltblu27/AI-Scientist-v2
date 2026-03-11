@@ -53,7 +53,7 @@ agent:
   # whether to instruct the agent to generate a prediction function
   expose_prediction: False
   # whether to provide the agent with a preview of the data
-  data_preview: True
+  data_preview: False
 
   # LLM settings for coding
   code:

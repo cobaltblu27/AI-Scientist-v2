@@ -9,6 +9,21 @@ import backoff
 
 from ai_scientist.tools.base_tool import BaseTool
 
+S2_MIN_REQUEST_INTERVAL_SECONDS = 1.0
+_S2_RATE_LIMIT_LOCK = threading.Lock()
+_S2_LAST_REQUEST_TS = 0.0
+
+
+def _throttle_s2_requests() -> None:
+    """Enforce at most 1 Semantic Scholar request per second (per process)."""
+    global _S2_LAST_REQUEST_TS
+    with _S2_RATE_LIMIT_LOCK:
+        now = time.monotonic()
+        elapsed = now - _S2_LAST_REQUEST_TS
+        if elapsed < S2_MIN_REQUEST_INTERVAL_SECONDS:
+            time.sleep(S2_MIN_REQUEST_INTERVAL_SECONDS - elapsed)
+        _S2_LAST_REQUEST_TS = time.monotonic()
+
 
 S2_MIN_REQUEST_INTERVAL_SECONDS = 1.0
 _S2_RATE_LIMIT_LOCK = threading.Lock()
@@ -74,7 +89,7 @@ class SemanticScholarSearchTool(BaseTool):
     def search_for_papers(self, query: str) -> Optional[List[Dict]]:
         if not query:
             return None
-        
+
         headers = {}
         if self.S2_API_KEY:
             headers["X-API-KEY"] = self.S2_API_KEY
@@ -128,7 +143,7 @@ def search_for_papers(query, result_limit=10) -> Union[None, List[Dict]]:
         )
     else:
         headers["X-API-KEY"] = S2_API_KEY
-    
+
     if not query:
         return None
 

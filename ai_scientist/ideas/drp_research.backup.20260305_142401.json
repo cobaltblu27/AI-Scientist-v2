@@ -1,0 +1,44 @@
+[
+    {
+        "Name": "substructure_conditioned_cancer_drug_response",
+        "Title": "Substructure-Conditioned Multimodal Learning for Cancer Drug Response Prediction",
+        "Short Hypothesis": "Explicitly modeling molecular substructures (e.g., scaffolds, fragments, motifs) and conditioning their influence on scFoundation-informed cell-state embeddings can improve drug response prediction, especially for unseen drugs or cell lines.",
+        "Related Work": "Existing works like GPDRP and PAM-CDR utilize molecular graphs and fingerprints but do not focus on hierarchical substructure modeling. Similarly, while approaches like TransCDR explore multimodal fusion, they lack explicit conditioning of molecular substructures on cell-state embeddings. This proposal fills a gap by explicitly modeling substructures and their context-dependent effects on drug response.",
+        "Abstract": "Predicting drug sensitivity in cancer cell lines is a critical task in precision oncology. Current methods often rely on global molecular representations, overlooking the potential of modeling molecular substructures (e.g., scaffolds, fragments, motifs) and their interactions with cellular context. We propose a substructure-conditioned multimodal learning framework that explicitly models molecular substructures and conditions their influence on cell-state embeddings derived from scFoundation and MOSA-augmented data. The framework builds hierarchical molecular representations, where substructure embeddings are learned and contextualized using message-passing mechanisms within graph neural networks. These substructure embeddings are then modulated by multimodal cell-state embeddings, enabling the model to predict drug responses in a context-sensitive manner. We evaluate our framework on large-scale datasets, assessing performance on prediction accuracy (IC50), generalization to unseen drugs or cell lines, and interpretability of substructure-cell interactions. By leveraging substructure-aware modeling and cell-specific contextualization, our approach aims to provide new insights into the mechanistic underpinnings of drug sensitivity.",
+        "Experiments": [
+            "1. Train the proposed model on GDSC and CCLE datasets to predict IC50 values, using scFoundation embeddings as cell-state context and substructure graph embeddings for drugs.",
+            "2. Compare performance with baselines like GPDRP, PAM-CDR, and TransCDR across metrics such as RMSE, AUROC, and AUPR.",
+            "3. Conduct ablation studies to assess the contribution of substructure embedding modules and their conditioning on cell-state embeddings.",
+            "4. Test generalization by evaluating the model on unseen drugs (new scaffolds) and unseen cell lines.",
+            "5. Perform case studies to interpret the influence of specific substructures on drug response in different cell states, using attention visualization.",
+            "6. Investigate low-data settings and evaluate few-shot learning capabilities for novel drug-cell line pairs."
+        ],
+        "Risk Factors and Limitations": [
+            "1. Scalability: The hierarchical modeling of substructures may increase computational complexity, making training slower.",
+            "2. Data Quality: The accuracy of substructure annotations and the robustness of scFoundation embeddings may impact performance.",
+            "3. Generalization: While the model aims to generalize to unseen drugs and cell lines, achieving robust performance in real-world settings remains challenging.",
+            "4. Interpretability: While substructure modeling aims to enhance interpretability, the interaction between substructures and cell embeddings may still be hard to explain in mechanistic terms."
+        ]
+    },
+    {
+        "Name": "retrieval_augmented_drug_response",
+        "Title": "Retrieval-Augmented Multimodal Learning for Cancer Drug Response Prediction",
+        "Short Hypothesis": "Integrating retrieval-augmented learning into a multimodal framework can improve drug response prediction by dynamically contextualizing drug substructures and cell-state embeddings, leading to better generalization to unseen drugs and cell lines.",
+        "Related Work": "Recent works like MHGCN and TransGCDR integrate multimodal data using graph-based and transformer-based approaches. However, they lack dynamic retrieval mechanisms that can tailor molecular and cellular embeddings to specific drug-cell pairs. Retrieval-augmented models have shown promise in NLP (e.g., RAG), but their application in drug response prediction is unexplored. This proposal extends the existing literature by introducing a retrieval module to enhance multimodal fusion and improve generalization.",
+        "Abstract": "Drug response prediction in cancer cell lines is a pivotal task in precision medicine. While recent advancements leverage multimodal data, existing methods often fail to dynamically adapt molecular and cellular representations to specific drug-cell pairs, limiting their generalization and interpretability. We propose a retrieval-augmented multimodal learning framework that integrates a retrieval module into a substructure-conditioned model. The retrieval module dynamically fetches relevant molecular substructures and transcriptomic profiles from a curated knowledge base, enriching the context for each drug-cell pair. The framework employs graph neural networks to encode molecular substructures and scFoundation-based embeddings to represent cell states. The retrieved data is fused with these embeddings using cross-modal attention mechanisms, enabling the model to predict drug responses (e.g., IC50 values) more effectively. We evaluate the framework on datasets like GDSC, CCLE, and CODERData, focusing on metrics such as RMSE, AUROC, and generalization to unseen drugs or cell lines. By combining retrieval-based context enrichment with multimodal learning, our approach aims to set a new benchmark for drug response prediction in cancer research.",
+        "Experiments": [
+            "1. Train the retrieval-augmented model on GDSC and CCLE datasets, using CODERData as the knowledge base for retrieval.",
+            "2. Compare performance with baselines like MHGCN, TransGCDR, and DeepMoDRP on metrics such as RMSE, AUROC, and AUPR.",
+            "3. Conduct ablation studies to assess the contribution of the retrieval module and cross-modal attention mechanisms.",
+            "4. Evaluate generalization by testing the model on unseen drugs (new scaffolds) and unseen cell lines.",
+            "5. Perform case studies to interpret the retrieved substructures and their influence on drug response predictions.",
+            "6. Test the model in low-data settings to evaluate its robustness and few-shot learning capabilities."
+        ],
+        "Risk Factors and Limitations": [
+            "1. Complexity: The retrieval module adds computational overhead, which may increase training and inference time.",
+            "2. Data Quality: The effectiveness of the retrieval mechanism depends on the quality and comprehensiveness of the knowledge base (e.g., CODERData).",
+            "3. Generalization: While the model aims to generalize to unseen drugs and cell lines, it may still face challenges in real-world settings with noisy data.",
+            "4. Interpretability: Although the retrieval mechanism is designed to enhance interpretability, the cross-modal attention outputs may still be difficult to explain mechanistically."
+        ]
+    }
+]

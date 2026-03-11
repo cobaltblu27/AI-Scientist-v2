@@ -572,6 +572,22 @@ def create_client(model) -> tuple[Any, str]:
             api_key=os.environ.get("OLLAMA_API_KEY", ""),
             base_url="http://localhost:11434/v1",
         ), model
+    elif model.startswith(COPILOT_MODEL_PREFIX):
+        client_model = model.removeprefix(COPILOT_MODEL_PREFIX)
+        print(f"Using GitHub Copilot API with model {client_model}.")
+        if "GITHUB_COPILOT_API_KEY" not in os.environ:
+            raise ValueError("GITHUB_COPILOT_API_KEY environment variable not set")
+        return (
+            openai.OpenAI(
+                api_key=os.environ["GITHUB_COPILOT_API_KEY"],
+                base_url=COPILOT_BASE_URL,
+                default_headers={
+                    "Accept": "application/json",
+                    "Copilot-Integration-Id": COPILOT_INTEGRATION_ID,
+                },
+            ),
+            client_model,
+        )
     elif "gpt" in model:
         print(f"Using OpenAI API with model {model}.")
         return openai.OpenAI(), model
